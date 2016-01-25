@@ -1,0 +1,680 @@
+Sub NoldusFreeInteractionScoring()
+' Andrew Fairless, November 2009
+' This program was modified slightly from the July 2009 version.  Specifically, some of the information is not outputted
+' back onto the spreadsheet, as this information is not necessary for current purposes.
+
+' Andrew Fairless, July 2009
+' This program takes Noldus data as input, totals its events, and re-arranges it for graphing into an event timeline.
+' This program was subsequently expanded to arrange the event totals into a single row for easy transferral to another spreadsheet
+' that compiles all the data for a particular experiment.
+'
+' More specifically, this data takes a Noldus data table as its input.
+' The Noldus data table lists the start and stop times of the events that were recorded in the Noldus Observer software.
+' The Noldus data table may also include who/what ("Subject") performed an action ("Behavior") in what way ("Behavior
+' Modifier 1", "Behavior Modifier 2", etc.).  This program can classify and subclassify only 3 of these attributes (e.g.,
+' it can handle "Subject", "Behavior", and "Behavior Modifier 1", but not "Behavior Modifier 2").
+' NOTE:  If fewer than 3 of these attributes are present, the program code must be adjusted.  See NOTE below preceding "Column1Name = ".
+' The Noldus data table should be in chronological order (i.e., the event times should proceed from lowest to highest as one moves from the top to the bottom of the table.
+'
+' This program hierarchically re-sorts the Noldus data table by the 3 attributes and places this re-arranged data to the right of the original data.
+'
+' This program calculates the duration of each event and displays this information to the right of the re-sorted data (in the re-sorted sequence).
+' This program calculates the total durations and numbers of events for each attribute -- which is its own category -- and displays this information to the right of the event durations.
+' This program displays a final column to the right of the prior calculations.  This column is formatted so that the events can be graphed on a timeline (using a separate macro/program).
+'
+' This program calls the functions "CountUniqueValues" and "ColumnIndexByName".
+
+' This program was expanded to do the following:  compile the latencies, number of times, and durations of the subcategories of the
+' Column2 events (usually "Behavior") into a compact table displayed to the right of prior output; display a timeline of the
+' "stimulussniffstest" and "testsniffsstimulus" (or any other two events as defined by the programmer) events to the right of prior
+' output; calculate the duration of these two events without counting time when they overlapped twice; and re-arrange these data
+' into a single row displayed above the original Noldus data table.
+
+Dim OriginalDataRange As Range
+Dim DataToSortRange As Range
+Dim OriginalDataArray As Variant
+Dim DataSortedArray As Variant
+Dim ColCount As Integer
+Dim ColIndex As Integer
+Dim RowCount As Integer
+Dim RowIndex As Integer
+Dim Index1 As Integer
+Dim Index2 As Integer
+Dim NumOfExcludeRows As Integer
+
+' Columns 1 - 3 are the columns that are hierarchically sorted in the original data set and include the important
+' variables by which to sum the data (e.g., Subject, Behavior, Behavior Modifier)
+Dim Column1Name As String
+Dim Column2Name As String
+Dim Column3Name As String
+Dim Column1Index As Integer
+Dim Column2Index As Integer
+Dim Column3Index As Integer
+Dim Column1Array As Variant
+Dim Column2Array As Variant
+Dim Column3Array As Variant
+Dim Column1UniqueCount As Variant
+Dim Column2UniqueCount As Variant
+Dim Column3UniqueCount As Variant
+Dim Column1UniqueArray As Variant
+Dim Column2UniqueArray As Variant
+Dim Column3UniqueArray As Variant
+Dim Column1UniqueArrayRowIndices As Variant
+Dim Column2UniqueArrayRowIndices As Variant
+Dim Column3UniqueArrayRowIndices As Variant
+
+' These variables were added to create an array of the latencies, durations, and number of occurrences of events found in Column2.
+Dim EventSummArray As Variant
+Dim EventSummArrayColCount As Integer
+Dim DataRowArray As Variant
+Dim DataRowArrayColCount As Integer
+Dim DataRowArrayRowCount As Integer
+
+' These variables were added to sum the total duration of time that two events occurred, even if they overlapped.
+Dim MergedEventSum As Single
+Dim EventToBeMerged1 As String
+Dim EventToBeMerged2 As String
+Dim EventMergeArray As Variant
+Dim EventMergeRowCount As Integer
+Dim EventMergeColCount As Integer
+Dim EarliestTime As Single
+Dim LatestTime As Single
+' '1' means a time resolution in the output timeline column of tenths of a second; '2', hundredths of a second; etc.
+Const NumberDecimalPlaces As Integer = 1
+' Sets a marker to mark when (i.e., in which time bins) a particular event occurred.
+Const Marker As Integer = 1
+Dim Index As Integer
+Dim Index3 As Integer
+Dim Index4 As Integer
+Dim CulledDataArray As Variant
+Dim CulledDataColCount As Integer
+Dim TimeBinOverlapCount As Integer
+Dim TimeOverlap As Single
+Dim TotalNonOverlappingDuration As Single
+'Const Stimulussniffsobject As String = "stimulussniffsobject"
+'Const Testsniffsobject As String = "testsniffsobject"
+'Const Stimulussniffstest As String = "stimulussniffstest"
+'Const Testsniffsstimulus As String = "testsniffsstimulus"
+Dim DataRowEvents As Variant
+EventToBeMerged1 = "stimulussniffstest"
+EventToBeMerged2 = "testsniffsstimulus"
+
+
+'NOTE:  if all 3 column headings are not present in the Noldus input data, then this program will produce an error
+'(because it expects 3 columns).  In the event that there are only 1 or 2 columns, simply change column names that
+' are not present into column name(s) that are present for the 3 variables below.
+    Column1Name = "Subject"
+    Column2Name = "Behavior"
+'    Column3Name = "Behavior Modifier 1"
+    Column3Name = "Behavior"
+    
+Dim EventTypeColumnName As String
+Dim EventTypeColumnName1 As String
+Dim EventTypeColumnName2 As String
+Dim EventTypeColumnIndex As Integer
+Dim TimeColumnIndex As Integer
+Dim StateStart As String
+Dim StateStop As String
+Dim EventTimesArray As Variant
+Dim EventTimesArrayColumnNumber As Integer
+Dim OutputRange As Range
+Dim Sum As Single
+Dim LabelColumnIndex As Integer
+Dim SumColumnIndex As Integer
+Dim CountsColumnIndex As Integer
+Dim MarkOrNot As Boolean
+
+' The output array will have 12 columns
+    EventTimesArrayColumnNumber = 12
+
+    EventTypeColumnName2 = "Event Type"
+    EventTypeColumnName1 = "State Event"
+' The column with the event times is assumed to be the first column
+    TimeColumnIndex = 1
+    StateStart = "State start"
+    StateStop = "State stop"
+    
+    
+    Index1 = 1
+    Selection.CurrentRegion.Select
+    Set OriginalDataRange = Selection.CurrentRegion
+    OriginalDataRange.Range("D1").Select
+        ActiveCell.Offset(1, 0).Select
+    Do While ActiveCell.Value = ""
+        ActiveCell.Offset(1, 0).Select
+        Index1 = Index1 + 1
+    Loop
+    Selection.CurrentRegion.Select
+' The original Noldus data table begins with 3 or 4 rows that are not useful ("Start Date", "Start Time", "Start Time
+' (ms)", and "Header Lines").  These rows are excluded, as in the variable "NumOfExcludeRows" below.
+    NumOfExcludeRows = Index1
+    ColCount = OriginalDataRange.Columns.Count
+    RowCount = OriginalDataRange.Rows.Count - NumOfExcludeRows
+    
+    Set DataToSortRange = OriginalDataRange.Offset(NumOfExcludeRows, 0).Resize(RowCount, ColCount)
+    
+' Copies the original Noldus data into an area to the right of the original data on the spreadsheet
+    DataToSortRange.Range("A1").Select
+    ActiveCell.Offset(0, ColCount + 1).Select
+    Selection.Resize(RowCount, ColCount).Select
+    Selection.Value = DataToSortRange.Value
+    Selection.CurrentRegion.Value = DataToSortRange.Value
+    
+ReDim OriginalDataArray(1 To RowCount, 1 To ColCount)
+    OriginalDataArray = Selection.Value
+    
+' Identifies index of the column whose header is Column1Name (e.g. "Behavior")
+    Column1Index = ColumnIndexByName(OriginalDataArray, Column1Name, ColCount)
+    Column2Index = ColumnIndexByName(OriginalDataArray, Column2Name, ColCount)
+    Column3Index = ColumnIndexByName(OriginalDataArray, Column3Name, ColCount)
+
+' Hierarchically sorts second table of data by the Noldus headings "Subject" (4th column), then "Behavior"
+' (5th column), then "Behavior Modifier 1" (6th column)
+' NOTE: some Noldus data tables may be missing one or more columns, which may introduce errors
+' NOTE: the if statements below accommodate the case where the 3rd column is missing from the Noldus data table
+'       if the 3rd column name is missing (ColumnIndex3 = 0), then it is not used in the date sort
+    If Column1Index > 0 And Column2Index > 0 And Column3Index > 0 Then
+        Selection.Sort Key1:=ActiveCell.Offset(0, Column1Index - 1).Range("A1"), Order1:=xlAscending, _
+                        Key2:=ActiveCell.Offset(0, Column2Index - 1).Range("A1"), Order2:=xlAscending, _
+                        Key3:=ActiveCell.Offset(0, Column3Index - 1).Range("A1"), Order3:=xlAscending, Header:=xlGuess
+    End If
+               
+    If Column1Index > 0 And Column2Index > 0 And Column3Index = 0 Then
+        Selection.Sort Key1:=ActiveCell.Offset(0, Column1Index - 1).Range("A1"), Order1:=xlAscending, _
+                        Key2:=ActiveCell.Offset(0, Column2Index - 1).Range("A1"), Order2:=xlAscending, Header:=xlGuess
+    End If
+                              
+               
+'    Set DataSortedRange = Selection.CurrentRegion
+ReDim DataSortedArray(1 To RowCount, 1 To ColCount)
+    DataSortedArray = Selection.Value
+      
+                
+' Column1Name
+' Reads a single column (identified by Column1Name) into its own 1-dimensional array
+ReDim Column1Array(1 To RowCount)
+    For RowIndex = 1 To RowCount
+        Column1Array(RowIndex) = DataSortedArray(RowIndex, Column1Index)
+    Next
+' Identifies # of unique items in 1-dimensional array from above, and places unique items into own array
+    Column1UniqueCount = UniqueItems(Column1Array, True)
+    Column1UniqueArray = UniqueItems(Column1Array, False)
+' Determines the index of the last row that a particular item (e.g., 'sniffs', 'mouse53') appears on in a column
+    Index1 = 1
+    RowIndex = 1
+ReDim Column1UniqueArrayRowIndices(1 To Column1UniqueCount + 100)
+    For RowIndex = 1 To (RowCount - 1)
+        If Column1Array(RowIndex) <> Column1Array(RowIndex + 1) Then
+            Column1UniqueArrayRowIndices(Index1) = RowIndex
+            Index1 = Index1 + 1
+        End If
+    Next
+    Column1UniqueArrayRowIndices(Index1) = RowIndex
+                      
+           
+' Column2Name
+' Does same thing as code segment above, but for Column2Name
+' NOTE:  Ideally, this code would be made into its own function and called repeatedly, but I lack time for elegance
+' Reads a single column (identified by Column#Name) into its own 1-dimensional array
+ReDim Column2Array(1 To RowCount)
+    For RowIndex = 1 To RowCount
+        Column2Array(RowIndex) = DataSortedArray(RowIndex, Column2Index)
+    Next
+' Identifies # of unique items in 1-dimensional array from above, and places unique items into own array
+    Column2UniqueCount = UniqueItems(Column2Array, True)
+    Column2UniqueArray = UniqueItems(Column2Array, False)
+' Determines the index of the last row that a particular item (e.g., 'sniffs', 'mouse53') appears on in a column
+    Index1 = 1
+    RowIndex = 1
+ReDim Column2UniqueArrayRowIndices(1 To Column2UniqueCount + 100)
+    For RowIndex = 1 To (RowCount - 1)
+        If Column2Array(RowIndex) <> Column2Array(RowIndex + 1) Then
+            Column2UniqueArrayRowIndices(Index1) = RowIndex
+            Index1 = Index1 + 1
+        End If
+    Next
+    Column2UniqueArrayRowIndices(Index1) = RowIndex
+           
+           
+' Column3Name
+' Does same thing as code segment above, but for Column3Name
+' NOTE:  Ideally, this code would be made into its own function and called repeatedly, but I lack time for elegance
+' Reads a single column (identified by Column#Name) into its own 1-dimensional array
+
+ReDim Column3Array(1 To RowCount)
+    For RowIndex = 1 To RowCount
+        Column3Array(RowIndex) = DataSortedArray(RowIndex, Column3Index)
+    Next
+' Identifies # of unique items in 1-dimensional array from above, and places unique items into own array
+    Column3UniqueCount = UniqueItems(Column3Array, True)
+    Column3UniqueArray = UniqueItems(Column3Array, False)
+' Determines the index of the last row that a particular item (e.g., 'sniffs', 'mouse53') appears on in a column
+    Index1 = 1
+    RowIndex = 1
+ReDim Column3UniqueArrayRowIndices(1 To Column3UniqueCount + 100)
+    For RowIndex = 1 To (RowCount - 1)
+        If Column3Array(RowIndex) <> Column3Array(RowIndex + 1) Then
+            Column3UniqueArrayRowIndices(Index1) = RowIndex
+            Index1 = Index1 + 1
+        End If
+    Next
+    Column3UniqueArrayRowIndices(Index1) = RowIndex
+                     
+               
+' Determines whether the header for the event type column is "Event Type" or "State Event"
+    For Index1 = 1 To ColCount
+        If DataSortedArray(1, Index1) = EventTypeColumnName1 Then
+            EventTypeColumnName = EventTypeColumnName1
+            Exit For
+        End If
+        If DataSortedArray(1, Index1) = EventTypeColumnName2 Then
+            EventTypeColumnName = EventTypeColumnName2
+            Exit For
+        Else
+            EventTypeColumnName = "error"
+        End If
+    Next
+                              
+' Identifies index of the column whose header is EventTypeColumnName (e.g. "Behavior")
+    EventTypeColumnIndex = ColumnIndexByName(DataSortedArray, EventTypeColumnName, ColCount)
+' Creates an array with the duration of all the events, and lists each duration in the same row as the end of the event
+ReDim EventTimesArray(RowCount, EventTimesArrayColumnNumber)
+    Index = 1
+    For RowIndex = 1 To RowCount
+        If DataSortedArray(RowIndex, EventTypeColumnIndex) = StateStop Then
+            If DataSortedArray(RowIndex - 1, EventTypeColumnIndex) = StateStart Then
+                EventTimesArray(RowIndex, Index) = DataSortedArray(RowIndex, TimeColumnIndex) - DataSortedArray(RowIndex - 1, TimeColumnIndex)
+            End If
+        Else
+            EventTimesArray(RowIndex, Index) = 0
+        End If
+    Next
+       
+    For Index = 2 To EventTimesArrayColumnNumber
+        For RowIndex = 1 To RowCount
+            EventTimesArray(RowIndex, Index) = ""
+        Next
+    Next
+    
+' EventSummArray collects the totals of the subcategories of column2 (usually "Behavior") into a compact array for convenience.
+    EventSummArrayColCount = 4
+ReDim EventSummArray(0 To Column2UniqueCount + 1, 1 To EventSummArrayColCount)
+    For Index1 = 1 To Column2UniqueCount
+        EventSummArray(Index1, 1) = Column2UniqueArray(Index1)
+    Next
+    EventSummArray(0, 2) = "latencies (sec)"
+    EventSummArray(0, 3) = "number of times"
+    EventSummArray(0, 4) = "durations (sec)"
+    
+' This section calculates the total durations of the events for each (sub)category
+' These relationships are "hard-coded":  the first event classification column, i.e., Column1 is labeled in the 2nd column of the event output matrix,
+' and the sums-by-(sub)category for Column1 are in the 3rd column of the event output matrix.  In a brief format, these relationships are:
+' Column1:  labels - EventTimesArray column2    sums - EventTimesArray column3      number of events - EventTimesArray column4
+' Column2:  labels - EventTimesArray column5    sums - EventTimesArray column6      number of events - EventTimesArray column7
+' Column3:  labels - EventTimesArray column8    sums - EventTimesArray column9      number of events - EventTimesArray column10
+' Column1
+    Index1 = 2
+    LabelColumnIndex = 2
+    SumColumnIndex = 3
+    CountsColumnIndex = 4
+    For RowIndex = 1 To RowCount
+        If RowIndex = Column1UniqueArrayRowIndices(Index1) Then
+            EventTimesArray(RowIndex, LabelColumnIndex) = DataSortedArray(RowIndex, Column1Index)
+' (3 lines above) Labels only the rows where each category in Column1 is last listed with that category's name (e.g., stimulusmouse)
+' (lines below) Shows the sum of the event durations for each category next to its label
+            Sum = 0
+            For Index2 = (Column1UniqueArrayRowIndices(Index1 - 1) + 1) To Column1UniqueArrayRowIndices(Index1)
+                Sum = Sum + EventTimesArray(Index2, 1)
+            Next
+            EventTimesArray(RowIndex, SumColumnIndex) = Sum
+' (line below) Shows the number of events included in the sum next to where the sum is displayed
+            EventTimesArray(RowIndex, CountsColumnIndex) = ((Column1UniqueArrayRowIndices(Index1) - Column1UniqueArrayRowIndices(Index1 - 1)) / 2)
+            Index1 = Index1 + 1
+        End If
+    Next
+' Column2
+    Index1 = 2
+    LabelColumnIndex = 5
+    SumColumnIndex = 6
+    CountsColumnIndex = 7
+    For RowIndex = 1 To RowCount
+        If RowIndex = Column2UniqueArrayRowIndices(Index1) Then
+            EventTimesArray(RowIndex, LabelColumnIndex) = DataSortedArray(RowIndex, Column2Index)
+' (3 lines above) Label only the rows where each category in Column1 is last listed with that category's name (e.g., stimulusmouse)
+' (lines below) show the sum of the event durations for each category next to its label
+            Sum = 0
+            For Index2 = (Column2UniqueArrayRowIndices(Index1 - 1) + 1) To Column2UniqueArrayRowIndices(Index1)
+                Sum = Sum + EventTimesArray(Index2, 1)
+            Next
+            EventTimesArray(RowIndex, SumColumnIndex) = Sum
+' EventSummArray added to Column2 code only
+            EventSummArray(Index1, 4) = Sum
+' (line below) Shows the number of events included in the sum next to where the sum is displayed
+            EventTimesArray(RowIndex, CountsColumnIndex) = ((Column2UniqueArrayRowIndices(Index1) - Column2UniqueArrayRowIndices(Index1 - 1)) / 2)
+' EventSummArray added to Column2 code only
+            EventSummArray(Index1, 3) = ((Column2UniqueArrayRowIndices(Index1) - Column2UniqueArrayRowIndices(Index1 - 1)) / 2)
+            Index1 = Index1 + 1
+        End If
+    Next
+' Column3
+    Index1 = 2
+    LabelColumnIndex = 8
+    SumColumnIndex = 9
+    CountsColumnIndex = 10
+    For RowIndex = 1 To RowCount
+        If RowIndex = Column3UniqueArrayRowIndices(Index1) Then
+            EventTimesArray(RowIndex, LabelColumnIndex) = DataSortedArray(RowIndex, Column3Index)
+' (3 lines above) Label only the rows where each category in Column1 is last listed with that category's name (e.g., stimulusmouse)
+' (lines below) show the sum of the event durations for each category next to its label
+            Sum = 0
+            For Index2 = (Column3UniqueArrayRowIndices(Index1 - 1) + 1) To Column3UniqueArrayRowIndices(Index1)
+                Sum = Sum + EventTimesArray(Index2, 1)
+            Next
+            EventTimesArray(RowIndex, SumColumnIndex) = Sum
+' (line below) Shows the number of events included in the sum next to where the sum is displayed
+            EventTimesArray(RowIndex, CountsColumnIndex) = ((Column3UniqueArrayRowIndices(Index1) - Column3UniqueArrayRowIndices(Index1 - 1)) / 2)
+            Index1 = Index1 + 1
+        End If
+    Next
+                       
+                    
+' Specifies the column headers/names for the output array
+    EventTimesArray(0, 0) = "TOTAL"
+    EventTimesArray(1, 1) = "Event Durations"
+    EventTimesArray(1, 2) = DataSortedArray(1, Column1Index)
+    EventTimesArray(1, 3) = "Sums"
+    EventTimesArray(1, 4) = "# of events"
+    EventTimesArray(1, 5) = DataSortedArray(1, Column2Index)
+    EventTimesArray(1, 6) = "Sums"
+    EventTimesArray(1, 7) = "# of events"
+    EventTimesArray(1, 8) = DataSortedArray(1, Column3Index)
+    EventTimesArray(1, 9) = "Sums"
+    EventTimesArray(1, 10) = "# of events"
+    EventTimesArray(0, 12) = "Event durations graphing column"
+                                      
+' Totals the durations of all the events and displays it next to the label "TOTAL"
+' NOTE: if events are not mutually exclusive (i.e., if more than one event occurs at a given time), this calculated total
+' may be greater than the actual total duration of the events in aggregate
+    Sum = 0
+    For Index1 = 2 To RowCount
+        Sum = Sum + EventTimesArray(Index1, 1)
+    Next
+    EventTimesArray(0, 1) = Sum
+    
+' Creates the column to allow graphing of the events on a timeline (handled by a separate macro/program.
+' The column consists of the earliest recorded time as its first entry, and the event durations for successive entries.
+    EventTimesArray(2, 12) = OriginalDataArray(2, TimeColumnIndex)
+    For Index1 = 3 To RowCount
+        EventTimesArray(Index1, 12) = (OriginalDataArray(Index1, TimeColumnIndex)) - (OriginalDataArray(Index1 - 1, TimeColumnIndex))
+    Next
+                   
+' Displays the output array to the right of the sorted data on the spreadsheet
+    Selection.CurrentRegion.Range("A1").Select
+    ActiveCell.Offset(-1, (ColCount + 1)).Select
+    Set OutputRange = Range(ActiveCell, ActiveCell.Offset(RowCount, EventTimesArrayColumnNumber))
+    OutputRange.Value = EventTimesArray
+    ActiveCell.Offset(0, ColCount).Select
+    
+' Determines latencies of each subcategory in Column2, by locating first occurrence of each one in original data table and storing
+' the corresponding time index.
+    For Index1 = 1 To Column2UniqueCount
+        Index2 = 1
+        Do Until OriginalDataArray(Index2, Column2Index) = Column2UniqueArray(Index1)
+            Index2 = Index2 + 1
+        Loop
+        EventSummArray(Index1, 2) = OriginalDataArray(Index2, 1)
+    Next
+    
+' Displays summary of totals for subcategories of Column2 (usually "Behavior") in a compact array to the right of previous output.
+    Selection.CurrentRegion.Range("A1").Select
+    ActiveCell.Offset(2, (EventTimesArrayColumnNumber + 2)).Select
+    Set OutputRange = Range(ActiveCell, ActiveCell.Offset(Column2UniqueCount, EventSummArrayColCount - 1))
+    OutputRange.Value = EventSummArray
+    ActiveCell.Offset(0, ColCount).Select
+    
+    
+    
+    
+    EventMergeColCount = 3
+    EarliestTime = OriginalDataArray(2, 1)
+    LatestTime = OriginalDataArray(RowCount, 1)
+    EventMergeRowCount = LatestTime * 10 * NumberDecimalPlaces + 2
+ReDim EventMergeArray(1 To EventMergeRowCount, 1 To EventMergeColCount)
+' Creates header column.
+    EventMergeArray(1, 1) = "Time Bins"
+    EventMergeArray(1, 2) = EventToBeMerged1
+    EventMergeArray(1, 3) = EventToBeMerged2
+    EventMergeArray(2, 1) = EarliestTime
+' Assigns time bin values to the first column.
+    For Index = 3 To EventMergeRowCount
+        EventMergeArray(Index, 1) = Round(EventMergeArray(Index - 1, 1) + (1 / (NumberDecimalPlaces * 10)), NumberDecimalPlaces)
+    Next
+
+' Re-arranges relevant data from Noldus table into format suitable for previously written code.
+    CulledDataColCount = 3
+ReDim CulledDataArray(1 To RowCount, 1 To CulledDataColCount)
+    Index2 = 1
+    For Index1 = 1 To RowCount
+        If DataSortedArray(Index1, Column2Index) = EventToBeMerged1 Then
+            If DataSortedArray(Index1, EventTypeColumnIndex) = StateStart Then
+                CulledDataArray(Index2, 1) = DataSortedArray(Index1, 1)
+            ElseIf DataSortedArray(Index1, EventTypeColumnIndex) = StateStop Then
+                CulledDataArray(Index2, 2) = DataSortedArray(Index1, 1)
+                Index2 = Index2 + 1
+            End If
+        CulledDataArray(Index2, 3) = EventToBeMerged1
+        End If
+    Next
+'    Range("at15:av160").Value = CulledDataArray
+' Prints marker (name of the behavior or a number) of each event in its own column next to the time bins when it occurred.
+    MarkOrNot = False
+    Index2 = 1
+    For Index = 2 To EventMergeRowCount
+        If (EventMergeArray(Index, 1) > Round(CulledDataArray(Index2, 1), NumberDecimalPlaces)) And (EventMergeArray(Index, 1) < Round(CulledDataArray(Index2, 2), NumberDecimalPlaces)) Then
+            MarkOrNot = True
+        End If
+        If EventMergeArray(Index, 1) > Round(CulledDataArray(Index2, 2), NumberDecimalPlaces) Then
+            MarkOrNot = False
+            Index2 = Index2 + 1
+        End If
+        If MarkOrNot = True Then
+            EventMergeArray(Index, 2) = Marker
+        End If
+' This 'if' statement is a 'sloppy band-aid' to prevent index2 from exceeding its maximum; truly, index2 should be the outer loop & control termination
+        If Index2 > (RowCount - 2) Then
+            Exit For
+        End If
+    Next
+
+    Index2 = 1
+    For Index1 = 1 To RowCount
+        If DataSortedArray(Index1, Column2Index) = EventToBeMerged2 Then
+            If DataSortedArray(Index1, EventTypeColumnIndex) = StateStart Then
+                CulledDataArray(Index2, 1) = DataSortedArray(Index1, 1)
+            ElseIf DataSortedArray(Index1, EventTypeColumnIndex) = StateStop Then
+                CulledDataArray(Index2, 2) = DataSortedArray(Index1, 1)
+                Index2 = Index2 + 1
+            End If
+        CulledDataArray(Index2, 3) = EventToBeMerged2
+        End If
+    Next
+' Repeats code above for EventToBeMerged2
+' Prints marker (name of the behavior or a number) of each event in its own column next to the time bins when it occurred.
+    MarkOrNot = False
+    Index2 = 1
+    For Index = 2 To EventMergeRowCount
+        If (EventMergeArray(Index, 1) > Round(CulledDataArray(Index2, 1), NumberDecimalPlaces)) And (EventMergeArray(Index, 1) < Round(CulledDataArray(Index2, 2), NumberDecimalPlaces)) Then
+            MarkOrNot = True
+        End If
+        If EventMergeArray(Index, 1) > Round(CulledDataArray(Index2, 2), NumberDecimalPlaces) Then
+            MarkOrNot = False
+            Index2 = Index2 + 1
+        End If
+        If MarkOrNot = True Then
+            EventMergeArray(Index, 3) = Marker
+        End If
+' This 'if' statement is a 'sloppy band-aid' to prevent index2 from exceeding its maximum; truly, index2 should be the outer loop & control termination
+        If Index2 > (RowCount - 2) Then
+            Exit For
+        End If
+    Next
+           
+' Determines for much time two events overlapped.
+    TimeBinOverlapCount = 0
+    For Index = 2 To EventMergeRowCount
+        If (EventMergeArray(Index, 2) = Marker) And (EventMergeArray(Index, 3) = Marker) Then
+            TimeBinOverlapCount = TimeBinOverlapCount + 1
+        End If
+    Next
+    TimeOverlap = TimeBinOverlapCount / (NumberDecimalPlaces * 10)
+'    Range("r2").Value = TimeOverlap
+    
+    
+   
+' Displays events to be merged to the right of prior data from above.
+'    Selection.CurrentRegion.Range("A1").Select
+'    ActiveCell.Offset(0, (EventSummArrayColCount + 2)).Select
+'    Set OutputRange = Range(ActiveCell, ActiveCell.Offset(EventMergeRowCount - 1, EventMergeColCount - 1))
+'    OutputRange.Value = EventMergeArray
+'    ActiveCell.Offset(0, ColCount).Select
+    
+' Re-arranges subcategories of Column2 into a single row.
+ReDim DataRowEvents(1 To 4)
+    DataRowEvents(1) = "stimulussniffsobject"
+    DataRowEvents(2) = "stimulussniffstest"
+    DataRowEvents(3) = "testsniffsobject"
+    DataRowEvents(4) = "testsniffsstimulus"
+    
+    DataRowArrayColCount = 13
+    DataRowArrayRowCount = 3
+ReDim DataRowArray(1 To DataRowArrayRowCount, 1 To DataRowArrayColCount)
+    DataRowArray(2, 13) = "(Nonoverlapping) Duration of stimulussniffstest and testsniffsstimulus"
+'    For Index2 = 1 To 4
+        For Index1 = 1 To (Column2UniqueCount + 1)
+            If EventSummArray(Index1, 1) = DataRowEvents(1) Then
+                Index4 = 2
+                For Index3 = 1 To 6 Step 2
+                    DataRowArray(1, Index3) = EventSummArray(0, Index4)
+                    DataRowArray(2, Index3) = EventSummArray(Index1, 1)
+                    DataRowArray(3, Index3) = EventSummArray(Index1, Index4)
+                    Index4 = Index4 + 1
+                Next
+            End If
+            If EventSummArray(Index1, 1) = DataRowEvents(2) Then
+                Index4 = 2
+                For Index3 = 7 To 12 Step 2
+                    DataRowArray(1, Index3) = EventSummArray(0, Index4)
+                    DataRowArray(2, Index3) = EventSummArray(Index1, 1)
+                    DataRowArray(3, Index3) = EventSummArray(Index1, Index4)
+                    Index4 = Index4 + 1
+                Next
+            End If
+            If EventSummArray(Index1, 1) = DataRowEvents(3) Then
+                Index4 = 2
+                For Index3 = 1 To 6 Step 2
+                    DataRowArray(1, Index3 + 1) = EventSummArray(0, Index4)
+                    DataRowArray(2, Index3 + 1) = EventSummArray(Index1, 1)
+                    DataRowArray(3, Index3 + 1) = EventSummArray(Index1, Index4)
+                    Index4 = Index4 + 1
+                Next
+            End If
+            If EventSummArray(Index1, 1) = DataRowEvents(4) Then
+                Index4 = 2
+                For Index3 = 7 To 12 Step 2
+                    DataRowArray(1, Index3 + 1) = EventSummArray(0, Index4)
+                    DataRowArray(2, Index3 + 1) = EventSummArray(Index1, 1)
+                    DataRowArray(3, Index3 + 1) = EventSummArray(Index1, Index4)
+                    Index4 = Index4 + 1
+                Next
+            End If
+        Next
+
+' Final calculation for TotalNonOverlappingDuration, the total duration of time of the two events (without counting overlapping time twice).
+    TotalNonOverlappingDuration = DataRowArray(3, 11) + DataRowArray(3, 12) - TimeOverlap
+    DataRowArray(3, 13) = TotalNonOverlappingDuration
+    
+    
+' Prints summary of totals for subcategories of Column2 in a single row above the original data.
+'    OriginalDataRange.Range("A1").Select
+'    ActiveCell.Offset(-DataRowArrayRowCount - 1, 0).Select
+'    Set OutputRange = Range(ActiveCell, ActiveCell.Offset(DataRowArrayRowCount - 1, DataRowArrayColCount - 1))
+'    OutputRange.Value = DataRowArray
+    
+' Annotates file in top left corner.
+    Range("A1").Value = "The data below are for the elevated zero maze"
+    Range("A2").Value = "The data below were scored with the Noldus Observer software"
+    Range("A3").Value = "The data tallying and re-arrangement was done by running the macro 'NoldusFreeInteractionScoring' on " & Date
+    
+                 
+End Sub
+
+
+Function CountUniqueValues(InputRange As Range) As Long
+Dim cl As Range, UniqueValues As New Collection
+    Application.Volatile
+    On Error Resume Next ' ignore any errors
+    For Each cl In InputRange
+        UniqueValues.Add cl.Value, CStr(cl.Value) ' add the unique item
+    Next cl
+    On Error GoTo 0
+    CountUniqueValues = UniqueValues.Count
+End Function
+
+
+Function UniqueItems(ArrayIn, Optional Count As Variant) As Variant
+'   Accepts an array or range as input
+'   If Count = True or is missing, the function returns the number of unique elements
+'   If Count = False, the function returns a variant array of unique elements
+    Dim Unique() As Variant ' array that holds the unique items
+    Dim Element As Variant
+    Dim i As Integer
+    Dim FoundMatch As Boolean
+'   If 2nd argument is missing, assign default value
+    If IsMissing(Count) Then Count = True
+'   Counter for number of unique elements
+    NumUnique = 0
+'   Loop thru the input array
+    For Each Element In ArrayIn
+        FoundMatch = False
+'       Has item been added yet?
+        For i = 1 To NumUnique
+            If Element = Unique(i) Then
+                FoundMatch = True
+                Exit For '(exit loop)
+            End If
+        Next i
+AddItem:
+'       If not in list, add the item to unique list
+        If Not FoundMatch And Not IsEmpty(Element) Then
+            NumUnique = NumUnique + 1
+            ReDim Preserve Unique(NumUnique)
+            Unique(NumUnique) = Element
+        End If
+    Next Element
+'   Assign a value to the function
+    If Count Then UniqueItems = NumUnique Else UniqueItems = Unique
+End Function
+
+
+Function ColumnIndexByName(DataArray, ColumnName, TotalColumnNumber) As Integer
+' This function accepts the name of a column in a matrix (i.e., the value of the cell in the first row, or header row)
+' and the total number of columns in the matrix, and returns the position of the column (i.e., 1st column is '1', 2nd is '2', etc.)
+' If the name is not found, the function returns a zero '0'
+Dim ColumnIndex As Integer
+
+    ColumnIndex = 0
+    For ColumnIndex = 1 To TotalColumnNumber
+        If DataArray(1, ColumnIndex) = ColumnName Then
+            ColumnIndexByName = ColumnIndex
+'            Return
+'        Else
+'            ColumnIndexByName = 0
+        End If
+    Next
+
+End Function
+
+
+
+
+
